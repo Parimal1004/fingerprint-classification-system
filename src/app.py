@@ -2,14 +2,17 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
+from pathlib import Path
 
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-MODEL_PATH = "../models/best_fingerprint_model.keras"
-CONFUSION_MATRIX_PATH = "../results/confusion_matrix.png"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+MODEL_PATH = PROJECT_DIR / "models" / "best_fingerprint_model.keras"
+CONFUSION_MATRIX_PATH = PROJECT_DIR / "results" / "confusion_matrix.png"
 
 CLASS_NAMES = ["Arch", "Whorl", "Loop"]
 IMAGE_SIZE = (224, 224)
