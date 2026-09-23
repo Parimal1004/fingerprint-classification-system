@@ -16,6 +16,10 @@ The system uses a Convolutional Neural Network (CNN) built with TensorFlow/Keras
 
 Fingerprint patterns are commonly categorized into three major classes: **Arch, Whorl, and Loop**. Manually identifying these patterns can be time-consuming and subjective.
 
+## 🚀 Live Demo
+
+[🔍 Try the Fingerprint Classification System](https://parimal1004-fingerprint-classification-system-srcapp-uzldm0.streamlit.app/)
+
 This project applies deep learning to automatically classify fingerprint images into these three categories.
 
 ### Workflow
