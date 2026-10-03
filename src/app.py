@@ -1,22 +1,19 @@
+
 import streamlit as st
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
 from pathlib import Path
+import io
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
+from gradcam import compute_gradcam, colorize_heatmap, overlay_heatmap
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 MODEL_PATH = PROJECT_DIR / "models" / "best_fingerprint_model.keras"
 CONFUSION_MATRIX_PATH = PROJECT_DIR / "results" / "confusion_matrix.png"
-
 CLASS_NAMES = ["Arch", "Whorl", "Loop"]
 IMAGE_SIZE = (224, 224)
-
 TEST_ACCURACY = 87.65
 
 
@@ -30,6 +27,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 
 # ============================================================
@@ -310,34 +308,29 @@ model = load_fingerprint_model()
 # PREDICTION FUNCTION
 # ============================================================
 
-def predict_fingerprint(image):
+def preprocess_image(image):
+    """Grayscale -> 224x224 -> [0, 1] -> shape (1, 224, 224, 1)."""
 
-    # Convert to grayscale
     image = image.convert("L")
-
-    # Resize
     image = image.resize(IMAGE_SIZE)
 
-    # Convert to NumPy array
     image_array = np.array(
         image,
         dtype=np.float32
     )
 
-    # Normalize
     image_array = image_array / 255.0
 
-    # Add channel dimension
-    image_array = np.expand_dims(
-        image_array,
-        axis=-1
-    )
+    # Add channel dimension, then batch dimension
+    image_array = np.expand_dims(image_array, axis=-1)
+    image_array = np.expand_dims(image_array, axis=0)
 
-    # Add batch dimension
-    image_array = np.expand_dims(
-        image_array,
-        axis=0
-    )
+    return image_array
+
+
+def predict_fingerprint(image):
+
+    image_array = preprocess_image(image)
 
     # Prediction
     predictions = model.predict(
@@ -561,7 +554,12 @@ if uploaded_file is not None:
     # PREDICTION
     # ========================================================
 
+    file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+
     if classify_button:
+        st.session_state["classified_file"] = file_key
+
+    if st.session_state.get("classified_file") == file_key:
 
         predicted_class, confidence, predictions = (
             predict_fingerprint(image)
@@ -634,6 +632,99 @@ if uploaded_file is not None:
                 st.progress(
                     float(probability)
                 )
+
+
+        # ====================================================
+        # GRAD-CAM EXPLANATION
+        # ====================================================
+
+        st.markdown("---")
+
+        st.markdown(
+            '<div class="section-title">🔥 Grad-CAM: Where the Model Looked</div>',
+            unsafe_allow_html=True
+        )
+
+        st.write(
+            "Grad-CAM highlights the image regions that most increased "
+            "the model's score for the selected class. "
+            "Warm colors (red/yellow) mean stronger influence."
+        )
+
+        control_col1, control_col2 = st.columns(2)
+
+        with control_col1:
+            explain_class = st.selectbox(
+                "Explain which class?",
+                CLASS_NAMES,
+                index=CLASS_NAMES.index(predicted_class),
+                key=f"gradcam_class_{file_key}"
+            )
+
+        with control_col2:
+            heatmap_opacity = st.slider(
+                "Heatmap opacity",
+                min_value=0.1,
+                max_value=0.9,
+                value=0.5,
+                step=0.05
+            )
+
+        try:
+            heatmap, _, _ = compute_gradcam(
+                model,
+                preprocess_image(image),
+                class_index=CLASS_NAMES.index(explain_class)
+            )
+        except Exception as error:
+            st.warning(f"Grad-CAM could not be computed: {error}")
+        else:
+            gray_image = image.convert("L").resize(IMAGE_SIZE)
+            heatmap_image = colorize_heatmap(heatmap, IMAGE_SIZE)
+            overlay_image = overlay_heatmap(
+                gray_image,
+                heatmap,
+                alpha=heatmap_opacity
+            )
+
+            cam_col1, cam_col2, cam_col3 = st.columns(3)
+
+            with cam_col1:
+                st.image(
+                    gray_image,
+                    caption="Model input (224 × 224)",
+                    width=300
+                )
+
+            with cam_col2:
+                st.image(
+                    heatmap_image,
+                    caption=f"Grad-CAM heatmap ({explain_class})",
+                    width=300
+                )
+
+            with cam_col3:
+                st.image(
+                    overlay_image,
+                    caption="Overlay",
+                    width=300
+                )
+
+            st.caption(
+                "Tip: if the heat sits on the card border, handwriting, or "
+                "ink smudges instead of the ridge pattern near the core or "
+                "delta, the model may be relying on background cues."
+            )
+
+            overlay_buffer = io.BytesIO()
+            overlay_image.save(overlay_buffer, format="PNG")
+
+            st.download_button(
+                "⬇️ Download Grad-CAM overlay",
+                data=overlay_buffer.getvalue(),
+                file_name=f"gradcam_{explain_class.lower()}.png",
+                mime="image/png"
+            )
 
 
 # ============================================================
